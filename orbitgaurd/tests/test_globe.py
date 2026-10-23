@@ -101,6 +101,23 @@ class ThreeGlobeTest(unittest.TestCase):
         self.assertIn("setDiagnostic('exception-status',currentStage+' — '+detail,true)", document)
         self.assertIn("console.error('ORBITGUARD Three.js '+stage", document)
 
+    def test_renderer_waits_for_explicit_nonzero_layout_and_resizes_canvas_and_camera(self):
+        document = create_three_globe_html(run("sizing-run", [point(1, 2)]))
+        self.assertIn("html,body{width:100%;height:620px;min-height:620px", document)
+        self.assertIn("#globe{position:relative;width:100%;height:620px", document)
+        self.assertIn("host.style.height='620px'", document)
+        self.assertIn("new ResizeObserver(check)", document)
+        self.assertLess(document.index("const dimensions=await new Promise"),
+                        document.index("new THREE.WebGLRenderer"))
+        self.assertIn("renderer.setSize(dimensions.width,dimensions.height,false)", document)
+        self.assertIn("new ResizeObserver(resize).observe(host)", document)
+        self.assertIn("camera.aspect=width/height", document)
+        self.assertIn("Container CSS '+width+' × '+height", document)
+        self.assertIn("canvas CSS '+Math.floor(canvasRect.width)+' × '+Math.floor(canvasRect.height)", document)
+        self.assertIn("ERROR · zero-sized container", document)
+        self.assertIn("ERROR · renderer canvas is zero-sized", document)
+        self.assertIn("container remains zero-sized after 120 layout frames", document)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,9 +114,10 @@ def create_three_globe_html(run: dict) -> str:
     return f'''<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-html,body,#globe{{width:100%;height:100%;min-height:580px;margin:0;overflow:hidden;background:#071827}}
-#globe{{position:relative;border:1px solid #1c3549;border-radius:12px;overflow:hidden;color:#e7f1f7;font:13px system-ui,sans-serif}}
-canvas{{display:block;width:100%;height:100%}}
+*{{box-sizing:border-box}}
+html,body{{width:100%;height:620px;min-height:620px;margin:0;overflow:hidden;background:#071827}}
+#globe{{position:relative;width:100%;height:620px;min-height:580px;border:1px solid #1c3549;border-radius:12px;overflow:hidden;color:#e7f1f7;font:13px system-ui,sans-serif}}
+canvas{{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%}}
 #title,#status,#hover,#credit{{position:absolute;z-index:2;background:rgba(7,24,39,.91);border:1px solid #254257;border-radius:7px;padding:7px 10px;pointer-events:none}}
 #title{{top:12px;left:14px;font-weight:650;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 #diagnostics{{position:absolute;z-index:3;top:12px;right:14px;width:min(390px,52%);max-height:calc(100% - 80px);overflow:auto;background:rgba(7,24,39,.94);border:1px solid #254257;border-radius:8px;padding:8px 10px;color:#b9cbd7;font-size:10px;line-height:1.4;pointer-events:none}}
@@ -162,18 +163,63 @@ try {{
   const {{OrbitControls}}=await import('three/addons/controls/OrbitControls.js');
   setDiagnostic('three-status','Available · version '+(THREE.REVISION||'unknown')+'; OrbitControls loaded.');
   const host=document.getElementById('globe');
+  // Streamlit tabs may create this iframe while its panel is hidden. Give the
+  // component its explicit iframe-sized height, then wait until layout assigns
+  // a real width before constructing the WebGL renderer.
+  host.style.width='100%';host.style.height='620px';host.style.minHeight='580px';
+  currentStage='container dimensions';
+  setDiagnostic('renderer-status','Waiting for non-zero container dimensions…');
+  const dimensions=await new Promise(resolve=>{{
+    let observer,zeroSizeFrames=0;
+    const check=()=>{{
+      const rect=host.getBoundingClientRect();
+      const width=Math.floor(rect.width),height=Math.floor(rect.height);
+      setDiagnostic('renderer-status','Container '+width+' × '+height+' px · waiting for measurable layout.');
+      if(width>0&&height>0){{if(observer)observer.disconnect();window.removeEventListener('resize',check);setDiagnostic('exception-status','None reported; container dimensions are non-zero.');resolve({{width,height}});return;}}
+      zeroSizeFrames++;
+      if(zeroSizeFrames===120){{
+        setDiagnostic('renderer-status','ERROR · container remains zero-sized after 120 layout frames ('+width+' × '+height+' px). Waiting for resize.',true);
+        setDiagnostic('exception-status','Container has a zero width or height; WebGL renderer creation deferred.',true);
+      }}
+      requestAnimationFrame(check);
+    }};
+    observer=new ResizeObserver(check);observer.observe(host);window.addEventListener('resize',check);
+    requestAnimationFrame(check);
+  }});
   currentStage='WebGL renderer creation';
   setDiagnostic('renderer-status','Creating WebGL renderer…');
   const renderer=new THREE.WebGLRenderer({{antialias:true,alpha:false}});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
-  renderer.setSize(host.clientWidth,host.clientHeight);
+  renderer.setSize(dimensions.width,dimensions.height,false);
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.domElement.setAttribute('aria-label','Interactive Three.js Earth showing the active SGP4 ground track');
   host.insertBefore(renderer.domElement,document.getElementById('title'));
-  setDiagnostic('renderer-status','Created · canvas '+renderer.domElement.width+' × '+renderer.domElement.height+'.');
+  const camera=new THREE.PerspectiveCamera(38,dimensions.width/dimensions.height,.1,100);
+  let active=true,hasValidSize=true;
+  function resize(){{
+    if(!active)return;
+    const rect=host.getBoundingClientRect(),width=Math.floor(rect.width),height=Math.floor(rect.height);
+    const canvasRect=renderer.domElement.getBoundingClientRect();
+    setDiagnostic('renderer-status','Container CSS '+width+' × '+height+' px · canvas CSS '+Math.floor(canvasRect.width)+' × '+Math.floor(canvasRect.height)+' px · canvas buffer '+renderer.domElement.width+' × '+renderer.domElement.height+' px.');
+    if(width<=0||height<=0){{
+      hasValidSize=false;fallback.style.display='grid';
+      setDiagnostic('renderer-status','ERROR · zero-sized container ('+width+' × '+height+' px); waiting for layout.',true);
+      setDiagnostic('exception-status','Container has a zero width or height.',true);return;
+    }}
+    renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();
+    const updatedCanvas=renderer.domElement.getBoundingClientRect();
+    if(updatedCanvas.width<=0||updatedCanvas.height<=0||renderer.domElement.width<=0||renderer.domElement.height<=0){{
+      hasValidSize=false;fallback.style.display='grid';
+      setDiagnostic('renderer-status','ERROR · renderer canvas is zero-sized ('+renderer.domElement.width+' × '+renderer.domElement.height+' buffer px).',true);
+      setDiagnostic('exception-status','Canvas has a zero width or height after renderer.setSize.',true);return;
+    }}
+    hasValidSize=true;fallback.style.display='none';
+    setDiagnostic('renderer-status','Ready · container '+width+' × '+height+' CSS px · canvas '+Math.floor(updatedCanvas.width)+' × '+Math.floor(updatedCanvas.height)+' CSS px ('+renderer.domElement.width+' × '+renderer.domElement.height+' buffer px).');
+    setDiagnostic('exception-status','None reported; container and canvas dimensions are non-zero.');
+  }}
+  resize();
   currentStage='Earth scene setup';
   const scene=new THREE.Scene(); scene.background=new THREE.Color('#071827');
-  const camera=new THREE.PerspectiveCamera(38,host.clientWidth/host.clientHeight,.1,100);
   const earthGroup=new THREE.Group(); scene.add(earthGroup);
   const earthGeometry=new THREE.SphereGeometry(1,96,64);
   const earthMaterial=new THREE.MeshBasicMaterial({{color:0x31546b}});
@@ -213,10 +259,9 @@ try {{
   setDiagnostic('track-status','Created · '+all.length+' positions across '+data.segments.length+' gap/wrap-safe segment(s) · run '+data.run_id.slice(0,12)+'.');
   const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(),hover=document.getElementById('hover');
   renderer.domElement.addEventListener('pointermove',event=>{{const rect=renderer.domElement.getBoundingClientRect();pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointer,camera);const hit=raycaster.intersectObjects(markers)[0];if(!hit){{hover.style.display='none';return;}}const {{point,label}}=hit.object.userData;hover.textContent=label+' · '+data.object_name+' (NORAD '+data.catalog_id+')\\nUTC: '+point.time_utc+'\\nLatitude: '+point.latitude.toFixed(5)+'° · Longitude: '+point.longitude.toFixed(5)+'°\\nSGP4 altitude: '+point.altitude_km.toFixed(3)+' km';hover.style.display='block';}});
-  let active=true;function resize(){{if(!active)return;const w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}}
-  new ResizeObserver(resize).observe(host);
-  function render(){{if(!active)return;requestAnimationFrame(render);controls.update();renderer.render(scene,camera);}}
-  render();fallback.style.display='none';
+  new ResizeObserver(resize).observe(host);window.addEventListener('resize',resize);
+  function render(){{if(!active)return;requestAnimationFrame(render);if(!hasValidSize)return;controls.update();renderer.render(scene,camera);}}
+  render();if(hasValidSize)fallback.style.display='none';
   setDiagnostic('html-js-status','Initialized · scene rendered for run '+data.run_id.slice(0,12)+'.');
   currentStage='NASA Earth texture request';
   setDiagnostic('texture-status','Loading NASA Blue Marble texture…');
@@ -229,6 +274,7 @@ try {{
   setDiagnostic('exception-status',currentStage+' — '+detail,true);
   if(currentStage==='Three.js module import')setDiagnostic('three-status','Failed · '+detail,true);
   if(currentStage==='WebGL renderer creation')setDiagnostic('renderer-status','Failed · '+detail,true);
+  if(currentStage==='container dimensions')setDiagnostic('renderer-status','Failed · no non-zero container size was available.',true);
   if(currentStage==='NASA Earth texture request')setDiagnostic('texture-status','Failed · '+detail,true);
   if(currentStage==='track geometry creation')setDiagnostic('track-status','Failed · '+detail,true);
   setDiagnostic('html-js-status','JavaScript started; initialization stopped at '+currentStage+'.',true);
