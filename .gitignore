@@ -23,3 +23,10 @@ data/cache/**
 !.gitkeep
 .DS_Store
 Thumbs.db
+
+__pycache__/
+*.py[cod]
+.venv/
+.venv313/
+.env
+.streamlit/secrets.toml
