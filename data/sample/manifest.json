@@ -1,0 +1,21 @@
+{
+  "files": {
+    "potential_decays.3le": {
+      "objects": 68,
+      "format": "3LE/TLE",
+      "url": "https://celestrak.org/NORAD/elements/gp.php?SPECIAL=DECAYING&FORMAT=3LE"
+    },
+    "noaa_solar_flux_30_day.json": {
+      "format": "JSON",
+      "rows": 30,
+      "url": "https://services.swpc.noaa.gov/products/10cm-flux-30-day.json"
+    },
+    "noaa_planetary_k_index.json": {
+      "format": "JSON",
+      "rows": 59,
+      "url": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+    }
+  },
+  "retrieval_time_utc": "2026-10-23T09:37:10.3470389Z",
+  "source": "CelesTrak public GP SPECIAL=DECAYING feed and NOAA SWPC JSON products"
+}
